@@ -1,0 +1,16 @@
+Using default value AELD_IS_FUN for string to write
+Using default value 10 for number of files to write
+Writing 10 files containing string AELD_IS_FUN to /tmp/aeld-data
+/tmp/aeld-data created
+Input string 'AELD_IS_FUN' is successfully added in the following path '/tmp/aeld-data/SuryawanshiAbhishek1.txt'
+Input string 'AELD_IS_FUN' is successfully added in the following path '/tmp/aeld-data/SuryawanshiAbhishek2.txt'
+Input string 'AELD_IS_FUN' is successfully added in the following path '/tmp/aeld-data/SuryawanshiAbhishek3.txt'
+Input string 'AELD_IS_FUN' is successfully added in the following path '/tmp/aeld-data/SuryawanshiAbhishek4.txt'
+Input string 'AELD_IS_FUN' is successfully added in the following path '/tmp/aeld-data/SuryawanshiAbhishek5.txt'
+Input string 'AELD_IS_FUN' is successfully added in the following path '/tmp/aeld-data/SuryawanshiAbhishek6.txt'
+Input string 'AELD_IS_FUN' is successfully added in the following path '/tmp/aeld-data/SuryawanshiAbhishek7.txt'
+Input string 'AELD_IS_FUN' is successfully added in the following path '/tmp/aeld-data/SuryawanshiAbhishek8.txt'
+Input string 'AELD_IS_FUN' is successfully added in the following path '/tmp/aeld-data/SuryawanshiAbhishek9.txt'
+Input string 'AELD_IS_FUN' is successfully added in the following path '/tmp/aeld-data/SuryawanshiAbhishek10.txt'
+The number of files are 10 and the number of matching lines are 10
+success
