@@ -1,4 +1,26 @@
+
+/*----------------------------------------------------------------------------------------------
+ * File Name: systemcalls.c
+ * Author Name: Abhishek Suryawanshi
+ * Compiler:gcc
+ * linker: g++
+ * Debugger: gdb
+ * References: 1. Chapter 27 Linux Programming interface
+ *             2. https://www.cs.utexas.edu/~theksong/2020/243/Using-dup2-to-redirect-output/
+ -----------------------------------------------------------------------------------------------*/
+
+
+
 #include "systemcalls.h"
+#include <string.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+
 
 /**
  * @param cmd the command to execute with system()
@@ -16,8 +38,46 @@ bool do_system(const char *cmd)
  *   and return a boolean true if the system() call completed with success 
  *   or false() if it returned a failure
 */
+     /*Status return from system()*/
+     int status ;  
+     
+     status = system(cmd);
+     
+     printf("system() returned: status=0x%04x (%d,%d)\n",(unsigned int) status, status>>8, status&0xff);
+     
+     if(status==-1)
+     {
+     
+        return false;
+     }
+     
+     else
+     {
+     
+         if(WIFEXITED(status)&&WEXITSTATUS(status)==127)
+         {
+          
+          printf("(Probably) could not invoke shell\n");
+          
+          return false; 
+         }
+         
+         if (WIFEXITED(status)&&WEXITSTATUS (status) != 0)
+         { 
+         
+         return false; 
+         }
+         
+         if((cmd==NULL)&&WEXITSTATUS (status) == 0){
 
-    return true;
+            return false;
+         }
+          
+         return true;
+      }
+     
+
+  
 }
 
 /**
@@ -40,6 +100,8 @@ bool do_exec(int count, ...)
     va_start(args, count);
     char * command[count+1];
     int i;
+    int status;
+    pid_t pid;
     for(i=0; i<count; i++)
     {
         command[i] = va_arg(args, char *);
@@ -58,6 +120,38 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *   
 */
+     pid= fork();
+
+     if(pid==-1)
+     {
+
+        return false;
+     }
+
+     else if(pid==0)
+     {
+
+        execv(command[0], command);
+        perror("execv");
+        exit(-1);
+        return false;
+     }
+
+     else if(pid > 0)
+     {
+   
+        if(waitpid(pid, &status,0)== -1)
+        { 
+            return false;
+        }
+
+        else if (WIFEXITED(status))
+        {
+            if(WEXITSTATUS(status)!=0)
+                return false;
+        }
+     }
+
 
     va_end(args);
 
@@ -74,6 +168,10 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
     va_list args;
     va_start(args, count);
     char * command[count+1];
+    int status;
+    pid_t pid;
+    int fd;
+
     int i;
     for(i=0; i<count; i++)
     {
@@ -92,6 +190,62 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *   
 */
+    if(outputfile!=NULL)
+    {
+        fd = open(outputfile,O_WRONLY|O_TRUNC|O_CREAT,0644);
+        if(fd<0)
+        {
+            perror("open");
+            return false;
+        }
+
+    }
+
+    pid = fork();
+
+    if(pid==-1)
+    {
+
+        return false;
+    }
+
+    else if(pid == 0)
+    {
+       
+       if(dup2(fd,STDOUT_FILENO)<0)
+       {
+          perror("dup2");
+          return false;
+       }
+
+       close(fd);
+
+        execv(command[0], command);
+        perror("execv");
+        exit (-1);
+        return false; 
+
+    }
+
+
+    else if(pid > 0)
+     {
+           close(fd);
+
+        if(waitpid(pid, &status,0)== -1)
+        { 
+            return false;
+        }
+
+        else if (WIFEXITED(status))
+        {
+            if(WEXITSTATUS(status)!=0)
+                {
+                    return false;
+                }
+        }
+     }
+
 
     va_end(args);
     
