@@ -21,8 +21,20 @@
 #include <fcntl.h>
 
 
-#define LOG_FILE_PATH "/var/tmp/aesdsocketdata"
+#define USE_AESD_CHAR_DEVICE 1
+
+#ifdef USE_AESD_CHAR_DEVICE
+
+#define LOG_FILE_PATH  "/dev/aesdchar"
+
+#else
+#define LOG_FILE_PATH  "/var/tmp/aesdsocketdata"
+
+#endif
+
+
 #define PORT "9000"
+#define BUF_SIZE 1024
 
 
 static int sfd = -1;
@@ -100,7 +112,7 @@ static void signal_handler(int signo)
 
 }
 
-
+#ifndef USE_AESD_CHAR_DEVICE
 
 void *timer_thread(void *args)
 {
@@ -191,69 +203,103 @@ void *timer_thread(void *args)
 }
 
 
+#endif
+
 
 
 void* packetRWthread(void* thr_params)
-
 {
 
-    char buf[2000];
+     thread_data* params = (thread_data*)thr_params;
+    
+    char* buffer_thread = (char*)malloc(sizeof(char) * BUF_SIZE);
+    
+    if(buffer_thread == NULL)
+    {
+        syslog(LOG_ERR,"failed to allocate memory to thread buffer error:%d\n\r", (int)(params->thread));
+        params->complete_status_flag = true; //exit
 
-    thread_data* params = (thread_data*)thr_params;
+    } 
+    
+    else
+    {
+        memset(buffer_thread, 0, BUF_SIZE);
 
+    }
 
-    int readByteCounts=0;
-    while(true)
+    uint32_t buffer_resize = 1; 
+	
+    int curr_pos = 0;
+
+    while(!(params->complete_status_flag))
     {
 
-        readByteCounts = read(params->cfd, buf, (2000));
-        
+        int readByteCounts = read(params->cfd, buffer_thread + curr_pos, BUF_SIZE);
+		
         if (readByteCounts < 0) 
         {
-            syslog(LOG_ERR, "Error: reading from socket errno=%d\n", errno);
+            free(buffer_thread);
             params->complete_status_flag = true;
             pthread_exit(NULL);
         }
 
-
+ 
         if (readByteCounts == 0)
         {
-            continue;
-        }           
-
+            continue; 
+        }
         
+        
+        curr_pos += readByteCounts;
 
-        if (strchr(buf, '\n')) 
+        if (strchr(buffer_thread, '\n')) 
         {  
            break; 
 
         } 
+        
+		buffer_resize++;
+		
+		buffer_thread = (char*)realloc(buffer_thread, (buffer_resize * BUF_SIZE));
+         
+		if(buffer_thread == NULL)
+        {
+           free(buffer_thread);
+           params->complete_status_flag = true; 
+           pthread_exit(NULL);
+        }
+
+
+
 
     }
 
+ 
     int fd = open(LOG_FILE_PATH,O_RDWR | O_APPEND, 0644);
     
     if (fd < 0)
     {
-          syslog(LOG_ERR, "Error: failed to open a file:%d\n", errno);
+        syslog(LOG_ERR, "Error: failed to open a file:%d\n", errno);
+           
     }
-
-    lseek(fd, 0, SEEK_END); 
+	
+    lseek(fd, 0, SEEK_END);
     
     int retVal = pthread_mutex_lock(params->mutex);
-    
+	
     if(retVal)
-    {
+    {  
         syslog(LOG_ERR, "ERROR:Error in locking the mutex\n\r");
+        free(buffer_thread);
         params->complete_status_flag = true;
         pthread_exit(NULL);
     }
 
-    int writeByteCount = write(fd, buf, readByteCounts);
-    
+    int writeByteCount = write(fd, buffer_thread, curr_pos);
+	
     if(writeByteCount < 0)
     {
-        syslog(LOG_ERR, "ERROR: Writing to file error no: %d\n\r", errno);
+        free(buffer_thread); 
         params->complete_status_flag = true;
         close(fd);
         pthread_exit(NULL);
@@ -263,85 +309,124 @@ void* packetRWthread(void* thr_params)
 
 
     retVal = pthread_mutex_unlock(params->mutex);
-    
+	
     if(retVal)
-    {
-        syslog(LOG_ERR, "ERROR:Error in unlocking the mutex\n\r");
+	{
+        free(buffer_thread);
         params->complete_status_flag = true;
         pthread_exit(NULL);
     }
 
     close(fd);
-  
+    
 
-
-    memset(buf,0, 2000);
+    
     int read_offset_pos = 0;
 
-    while(true) 
+    int fd_send = open(LOG_FILE_PATH, O_RDWR | O_APPEND, 0644);
+	
+    if(fd_send < 0)
     {
+        free(buffer_thread); 
+        params->complete_status_flag = true;
+        pthread_exit(NULL);    
+    }
 
-        int fd = open(LOG_FILE_PATH, O_RDWR | O_APPEND, 0644);
-        
-        if(fd < 0)
-        {
-            syslog(LOG_ERR, "Error: failed to open a file:%d\n", errno);
-            continue; 
-        }
-
-        lseek(fd, read_offset_pos, SEEK_SET);
+    lseek(fd_send, read_offset_pos, SEEK_SET);
 
 
-        int retVal = pthread_mutex_lock(params->mutex);
-        
+
+    char* read_buffer = (char*)malloc(sizeof(char) * BUF_SIZE);
+	
+    curr_pos = 0;
+	
+    memset(read_buffer,0, BUF_SIZE);
+	
+    buffer_resize = 1; 
+	
+    while(1) 
+    {
+        retVal = pthread_mutex_lock(params->mutex);
+		
         if(retVal)
-        {
-            syslog(LOG_ERR, "ERROR:Error in locking the mutex\n\r");
+		{
+            free(buffer_thread);
             params->complete_status_flag = true;
             pthread_exit(NULL);
         }
-        
-        int readByteCounts = read(fd, buf, 2000);
 
-        retVal = pthread_mutex_unlock(params->mutex);   
-        
+        int readByteCounts = read(fd_send, &read_buffer[curr_pos], 1);
+
+        retVal = pthread_mutex_unlock(params->mutex);  
+		
         if(retVal)
-        {
-            syslog(LOG_ERR, "ERROR:Error in locking the mutex\n\r");
+		{
+            free(buffer_thread); 
+            free(read_buffer);
             params->complete_status_flag = true;
             pthread_exit(NULL);
         }
-        
-        close(fd);
-        
+
         if(readByteCounts < 0)
-        {
-            syslog(LOG_ERR, "Error: failed to read from file:%d\n", errno);
-            continue;
+		{
+            syslog(LOG_ERR, "Error reading from file errno %d\n", errno);
+            break;
         }
 
         if(readByteCounts == 0)
-        {
             break;
-        }
-        
-        int writeByteCount = write(params->cfd, buf, readByteCounts );
-    
 
-        if(writeByteCount < 0)
+        if(read_buffer[curr_pos] == '\n')
         {
-            syslog(LOG_ERR, "failed to write on client fd:%d\n", errno);
-            continue;
+        
+            int writeByteCount = write(params->cfd, read_buffer, curr_pos + 1 );
+           
+
+            if(writeByteCount < 0)
+			{
+                syslog(LOG_ERR, "Error writing to client fd %d\n", errno);
+                break;
+            }
+			
+            memset(read_buffer, 0, (curr_pos + 1));
+
+            curr_pos = 0;
+
+        } 
+        
+        else 
+        {
+            curr_pos++;
+			
+            if(curr_pos > sizeof(read_buffer))
+			{
+                buffer_resize++;
+				
+                read_buffer = realloc(read_buffer, buffer_resize * BUF_SIZE);
+				
+                if(read_buffer == NULL)
+                {
+                    params->complete_status_flag = true; 
+                    free(read_buffer);
+                    free(buffer_thread);
+                    pthread_exit(NULL);
+                }
+            }   
+
+        
+
         }
 
-        read_offset_pos += writeByteCount;
 
     }
 
+    
+    close(fd_send);
+    free(read_buffer);
+    free(buffer_thread);
     params->complete_status_flag = true;
     pthread_exit(NULL);
 }
-
 
 
 
@@ -473,8 +558,15 @@ if (signal (SIGTERM, signal_handler) == SIG_ERR)
     }
 
 
+	
+#ifndef USE_AESD_CHAR_DEVICE
+
+ 
+    int temp_var = 1; 
     pthread_t time_id; 
-    pthread_create(&time_id, NULL, timer_thread, NULL);
+    pthread_create(&time_id, NULL, timer_thread, (void*)&temp_var);
+
+#endif 
  
 
     while(!(signal_recv)) 
@@ -534,8 +626,14 @@ if (signal (SIGTERM, signal_handler) == SIG_ERR)
 
 
     }
+	
+	#ifndef USE_AESD_CHAR_DEVICE
 
     pthread_join(time_id, NULL);
+
+#endif
+
+
 
     while (!SLIST_EMPTY(&head)) 
     {
@@ -556,4 +654,3 @@ if (signal (SIGTERM, signal_handler) == SIG_ERR)
     exit(0);
 
 }
-
