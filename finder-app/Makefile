@@ -10,6 +10,8 @@ CFLAGS = -g -Wall -Werror
 
 default: writer
 
+all: writer
+
 writer: writer.o
 	$(CC) $< -o $@
 	
